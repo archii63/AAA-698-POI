@@ -1,0 +1,174 @@
+# simple-todo-cli
+
+A tiny, single-file command-line TODO app written in Python.  
+Perfect for demos, learning, or storing quick tasks in a single JSON file.
+
+## Features
+- Add tasks
+- List tasks
+- Mark tasks as done
+- Remove tasks
+- Persist tasks in `todo.json`
+
+## Requirements
+- Python 3.8+
+
+## Installation
+```bash
+# clone the repo
+git clone https://github.com/your-username/simple-todo-cli.git
+cd simple-todo-cli
+
+# (optional) create virtual environment
+python -m venv venv
+source venv/bin/activate  # Linux / macOS
+venv\Scripts\activate     # Windows
+
+# run
+python main.py --help
+# add a task
+python main.py add "Buy milk"
+
+# list tasks
+python main.py list
+
+# mark task as done (use task id from list)
+python main.py done 1
+
+# remove task
+python main.py remove 1
+
+---
+
+# 2) main.py
+```python
+#!/usr/bin/env python3
+"""
+simple-todo-cli
+A minimal CLI todo app that stores tasks in a JSON file.
+"""
+
+import argparse
+import json
+from pathlib import Path
+from typing import List, Dict
+
+DATA_FILE = Path("todo.json")
+
+
+def load_tasks() -> List[Dict]:
+    if not DATA_FILE.exists():
+        return []
+    try:
+        return json.loads(DATA_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+
+def save_tasks(tasks: List[Dict]) -> None:
+    DATA_FILE.write_text(json.dumps(tasks, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def add_task(title: str) -> None:
+    tasks = load_tasks()
+    next_id = (max((t["id"] for t in tasks), default=0) + 1) if tasks else 1
+    task = {"id": next_id, "title": title, "done": False}
+    tasks.append(task)
+    save_tasks(tasks)
+    print(f"Added task #{next_id}: {title}")
+
+
+def list_tasks(show_all: bool = True) -> None:
+    tasks = load_tasks()
+    if not tasks:
+        print("No tasks found.")
+        return
+    for t in tasks:
+        if not show_all and t.get("done"):
+            continue
+        status = "✓" if t.get("done") else " "
+        print(f"[{status}] {t['id']}: {t['title']}")
+
+
+def mark_done(task_id: int) -> None:
+    tasks = load_tasks()
+    for t in tasks:
+        if t["id"] == task_id:
+            if t.get("done"):
+                print(f"Task #{task_id} is already done.")
+            else:
+                t["done"] = True
+                save_tasks(tasks)
+                print(f"Marked task #{task_id} as done.")
+            return
+    print(f"Task #{task_id} not found.")
+
+
+def remove_task(task_id: int) -> None:
+    tasks = load_tasks()
+    new = [t for t in tasks if t["id"] != task_id]
+    if len(new) == len(tasks):
+        print(f"Task #{task_id} not found.")
+        return
+    save_tasks(new)
+    print(f"Removed task #{task_id}.")
+
+
+def parse_args():
+    p = argparse.ArgumentParser(prog="simple-todo-cli", description="A tiny CLI todo app")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    a_add = sub.add_parser("add", help="Add a new task")
+    a_add.add_argument("title", type=str, help="Task title")
+
+    a_list = sub.add_parser("list", help="List tasks")
+    a_list.add_argument("--active-only", action="store_true", help="Show only active (not done) tasks")
+
+    a_done = sub.add_parser("done", help="Mark a task as done")
+    a_done.add_argument("id", type=int, help="Task id")
+
+    a_remove = sub.add_parser("remove", help="Remove a task")
+    a_remove.add_argument("id", type=int, help="Task id")
+
+    return p.parse_args()
+
+
+def main():
+    args = parse_args()
+    if args.cmd == "add":
+        add_task(args.title)
+    elif args.cmd == "list":
+        list_tasks(show_all=not args.active_only)
+    elif args.cmd == "done":
+        mark_done(args.id)
+    elif args.cmd == "remove":
+        remove_task(args.id)
+
+
+if __name__ == "__main__":
+    main()
+venv/
+__pycache__/
+todo.json
+MIT License
+
+Copyright (c) 2025 Your Name
+
+Permission is hereby granted, free of charge, to any person obtaining a copy...
+[standard MIT license body — replace "Your Name" and year as needed]
+MIT License
+
+Copyright (c) 2025 Your Name
+
+Permission is hereby granted, free of charge, to any person obtaining a copy...
+[standard MIT license body — replace "Your Name" and year as needed]
+# 1. create local repo
+git init
+git add .
+git commit -m "Initial commit: simple-todo-cli"
+
+# 2. create a repository on GitHub (manual via website) OR use GitHub CLI:
+gh repo create your-username/simple-todo-cli --public --source=. --remote=origin
+
+# 3. push
+git push -u origin main
