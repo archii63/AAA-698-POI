@@ -170,5 +170,11 @@ git commit -m "Initial commit: simple-todo-cli"
 # 2. create a repository on GitHub (manual via website) OR use GitHub CLI:
 gh repo create your-username/simple-todo-cli --public --source=. --remote=origin
 
+import argparse
+import json
+from pathlib import Path
+from typing import List, Dict
+
+DATA_FILE = Path("todo.json")
 # 3. push
 git push -u origin main
