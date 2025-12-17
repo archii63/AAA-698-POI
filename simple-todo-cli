@@ -10,6 +10,12 @@ Perfect for demos, learning, or storing quick tasks in a single JSON file.
 - Remove tasks
 - Persist tasks in `todo.json`
 
+
+def remove_task():
+    list_tasks()
+    if not tasks:
+        return
+
 ## Requirements
 - Python 3.8+
 
