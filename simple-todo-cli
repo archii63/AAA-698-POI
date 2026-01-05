@@ -16,6 +16,12 @@ def remove_task():
     if not tasks:
         return
 
+## Features
+- Add tasks
+- List tasks
+- Mark tasks as done
+- Remove tasks
+- Persist tasks in `todo.json`
 ## Requirements
 - Python 3.8+
 
