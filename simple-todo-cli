@@ -25,6 +25,10 @@ def remove_task():
 ## Requirements
 - Python 3.8+
 
+def remove_task():
+    list_tasks()
+    if not tasks:
+        return
 ## Installation
 ```bash
 # clone the repo
