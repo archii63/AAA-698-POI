@@ -1,0 +1,322 @@
+#!/usr/bin/env python3
+
+"""
+Nexora Sentinel
+---------------
+Lightweight Infrastructure Health & Monitoring Engine.
+
+Features:
+- HTTP/HTTPS health checks
+- Response-time measurement
+- Status-code validation
+- Timeout handling
+- Concurrent monitoring
+- JSON output
+- Clean terminal output
+- No external dependencies
+
+Author: Nexora Systems
+License: MIT
+"""
+
+from __future__ import annotations
+
+import argparse
+import concurrent.futures
+import json
+import sys
+import time
+import urllib.error
+import urllib.request
+from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
+from typing import Iterable
+
+
+USER_AGENT = "Nexora-Sentinel/1.0"
+DEFAULT_TIMEOUT = 10
+DEFAULT_WORKERS = 8
+
+
+@dataclass
+class HealthResult:
+    url: str
+    status: str
+    http_status: int | None
+    response_time_ms: float | None
+    error: str | None
+    checked_at: str
+
+
+def utc_now() -> str:
+    """Return the current UTC timestamp in ISO-8601 format."""
+    return datetime.now(timezone.utc).isoformat()
+
+
+def check_url(url: str, timeout: int = DEFAULT_TIMEOUT) -> HealthResult:
+    """
+    Perform a health check against a URL.
+
+    Returns:
+        HealthResult containing status, HTTP code,
+        response time and possible error details.
+    """
+
+    start = time.perf_counter()
+
+    request = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": USER_AGENT,
+            "Accept": "*/*",
+        },
+        method="GET",
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            elapsed = (time.perf_counter() - start) * 1000
+
+            status_code = response.status
+
+            if 200 <= status_code < 400:
+                status = "UP"
+            else:
+                status = "DEGRADED"
+
+            return HealthResult(
+                url=url,
+                status=status,
+                http_status=status_code,
+                response_time_ms=round(elapsed, 2),
+                error=None,
+                checked_at=utc_now(),
+            )
+
+    except urllib.error.HTTPError as exc:
+        elapsed = (time.perf_counter() - start) * 1000
+
+        return HealthResult(
+            url=url,
+            status="DOWN",
+            http_status=exc.code,
+            response_time_ms=round(elapsed, 2),
+            error=f"HTTP error: {exc.reason}",
+            checked_at=utc_now(),
+        )
+
+    except urllib.error.URLError as exc:
+        elapsed = (time.perf_counter() - start) * 1000
+
+        return HealthResult(
+            url=url,
+            status="DOWN",
+            http_status=None,
+            response_time_ms=round(elapsed, 2),
+            error=f"Connection error: {exc.reason}",
+            checked_at=utc_now(),
+        )
+
+    except TimeoutError:
+        elapsed = (time.perf_counter() - start) * 1000
+
+        return HealthResult(
+            url=url,
+            status="DOWN",
+            http_status=None,
+            response_time_ms=round(elapsed, 2),
+            error="Request timed out",
+            checked_at=utc_now(),
+        )
+
+    except Exception as exc:
+        elapsed = (time.perf_counter() - start) * 1000
+
+        return HealthResult(
+            url=url,
+            status="DOWN",
+            http_status=None,
+            response_time_ms=round(elapsed, 2),
+            error=str(exc),
+            checked_at=utc_now(),
+        )
+
+
+def monitor(
+    urls: Iterable[str],
+    timeout: int,
+    workers: int,
+) -> list[HealthResult]:
+    """Check multiple URLs concurrently."""
+
+    url_list = list(dict.fromkeys(urls))
+
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=min(workers, len(url_list))
+    ) as executor:
+
+        results = list(
+            executor.map(
+                lambda target: check_url(target, timeout),
+                url_list,
+            )
+        )
+
+    return results
+
+
+def print_terminal(results: list[HealthResult]) -> None:
+    """Print human-readable monitoring results."""
+
+    print("\nNEXORA SENTINEL")
+    print("=" * 78)
+
+    for result in results:
+        status = result.status
+
+        response = (
+            f"{result.response_time_ms:.2f} ms"
+            if result.response_time_ms is not None
+            else "-"
+        )
+
+        http_code = (
+            str(result.http_status)
+            if result.http_status is not None
+            else "-"
+        )
+
+        print(
+            f"[{status:<9}] "
+            f"{result.url:<40} "
+            f"HTTP: {http_code:<4} "
+            f"Response: {response}"
+        )
+
+        if result.error:
+            print(f"           Error: {result.error}")
+
+    print("=" * 78)
+
+    total = len(results)
+    healthy = sum(r.status == "UP" for r in results)
+    degraded = sum(r.status == "DEGRADED" for r in results)
+    down = sum(r.status == "DOWN" for r in results)
+
+    print(
+        f"Total: {total} | "
+        f"Up: {healthy} | "
+        f"Degraded: {degraded} | "
+        f"Down: {down}"
+    )
+
+
+def save_json(results: list[HealthResult], filename: str) -> None:
+    """Save monitoring results as JSON."""
+
+    payload = {
+        "project": "Nexora Sentinel",
+        "version": "1.0.0",
+        "generated_at": utc_now(),
+        "summary": {
+            "total": len(results),
+            "up": sum(r.status == "UP" for r in results),
+            "degraded": sum(r.status == "DEGRADED" for r in results),
+            "down": sum(r.status == "DOWN" for r in results),
+        },
+        "results": [asdict(result) for result in results],
+    }
+
+    with open(filename, "w", encoding="utf-8") as file:
+        json.dump(payload, file, indent=2)
+
+    print(f"\nJSON report saved to: {filename}")
+
+
+def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments."""
+
+    parser = argparse.ArgumentParser(
+        description="Nexora Sentinel - Infrastructure Health Monitor"
+    )
+
+    parser.add_argument(
+        "urls",
+        nargs="+",
+        help="URLs to monitor",
+    )
+
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=DEFAULT_TIMEOUT,
+        help=f"Request timeout in seconds (default: {DEFAULT_TIMEOUT})",
+    )
+
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=DEFAULT_WORKERS,
+        help=f"Number of concurrent workers (default: {DEFAULT_WORKERS})",
+    )
+
+    parser.add_argument(
+        "--json",
+        metavar="FILE",
+        help="Save results to a JSON file",
+    )
+
+    return parser.parse_args()
+
+
+def main() -> int:
+    """Application entry point."""
+
+    args = parse_args()
+
+    if args.timeout <= 0:
+        print("Error: timeout must be greater than zero.", file=sys.stderr)
+        return 2
+
+    if args.workers <= 0:
+        print("Error: workers must be greater than zero.", file=sys.stderr)
+        return 2
+
+    results = monitor(
+        urls=args.urls,
+        timeout=args.timeout,
+        workers=args.workers,
+    )
+
+    print_terminal(results)
+
+    if args.json:
+        save_json(results, args.json)
+
+    # Return a non-zero exit code if any endpoint is down.
+    if any(result.status == "DOWN" for result in results):
+        return 1
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+python nexora_sentinel.py https://github.com https://google.com https://example.com
+python nexora_sentinel.py \
+  https://github.com \
+  https://google.com \
+  https://example.com \
+  --json health_report.json
+python nexora_sentinel.py \
+  https://github.com \
+  https://google.com \
+  --timeout 5 \
+  --workers 4
+nexora-sentinel/
+│
+├── nexora_sentinel.py
+├── README.md
+├── LICENSE
+├── .gitignore
+└── health_report.json
